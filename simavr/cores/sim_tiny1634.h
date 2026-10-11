@@ -129,6 +129,7 @@ const struct mcu_t SIM_CORENAME = {
 		.pgers = AVR_IO_REGBIT(SPMCSR, PGERS),
 		.pgwrt = AVR_IO_REGBIT(SPMCSR, PGWRT),
 		.blbset = AVR_IO_REGBIT(SPMCSR, RFLB),
+		.ctpb = AVR_IO_REGBIT(SPMCSR, CTPB),
 	},
 	.extint = {
 		AVR_EXTINT_TINY_DECLARE(0, 'A', 2, GIFR),
