@@ -19,7 +19,8 @@
 
 /*
  * Timer 1 with CTC1: cleared on a match with OCR1C, so it counts 0..OCR1C
- * and never overflows.
+ * and never overflows. Then in PWM mode (PWM1A), as the Digistump core runs
+ * its millis(): 0..OCR1C again, and TOV1 set at OCR1C.
  */
 #include <avr/io.h>
 #include <avr/interrupt.h>
@@ -35,13 +36,12 @@ static void say(const char *s)
 		USIDR = *s++;
 }
 
-int main(void)
+static void count(void)
 {
 	uint8_t high = 0, last = 0, wraps = 0;
 
-	OCR1C = 9;
-	TCCR1 = (1 << CTC1) | (1 << CS10);
-	/* sampled at whatever phase the loop gives: the 9 itself lasts a
+	TIFR = (1 << TOV1);
+	/* sampled at whatever phase the loop gives: OCR1C itself lasts a
 	   single cycle, so it may not be seen */
 	for (int i = 0; i < 200; i++) {
 		uint8_t t = TCNT1;
@@ -54,6 +54,16 @@ int main(void)
 	say(high <= 9 ? "within OCR1C, " : "past OCR1C, ");
 	say(wraps ? "wraps, " : "never wraps, ");
 	say(TIFR & (1 << TOV1) ? "TOV1 set" : "no TOV1");
+}
+
+int main(void)
+{
+	OCR1C = 9;
+	TCCR1 = (1 << CTC1) | (1 << CS10);
+	count();
+	say("; PWM: ");
+	TCCR1 = (1 << CTC1) | (1 << PWM1A) | (1 << CS10);
+	count();
 	cli();
 	sleep_cpu();
 }
