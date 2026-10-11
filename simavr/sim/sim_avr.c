@@ -226,6 +226,10 @@ avr_reset(
 		avr->sreg[i] = 0;
 	avr_interrupt_reset(avr);
 	avr_cycle_timer_reset(avr);
+	/* before the peripherals reset: those that arm a timer (the watchdog,
+	 * after a watchdog reset) arm it from cycle 0, not from where the chip
+	 * was when it reset */
+	avr->cycle = 0;
 	if (avr->reset)
 		avr->reset(avr);
 	avr_io_t * port = avr->io_port;
@@ -246,7 +250,6 @@ avr_reset(
 			port->reset(port);
 		port = port->next;
 	}
-	avr->cycle = 0; // Prevent crash
 
 	avr->resetting = 0;
 }
