@@ -40,7 +40,32 @@ typedef struct avr_watchdog_t {
 	avr_int_vector_t watchdog;	// watchdog interrupt
 
 	avr_cycle_count_t	cycle_count;
+
+	/* the 128 kHz oscillator as a real one: off unless set (see below) */
+	struct {
+		int32_t		offset_ppm;	// its frequency off nominal
+		uint32_t	jitter_ppm;	// each period off that, at most
+		uint32_t	rng;		// xorshift32 state, from the seed
+	} osc;
 } avr_watchdog_t;
+
+/*
+ * The watchdog's own oscillator, which is not the CPU's clock: on a chip it
+ * runs some percent off its nominal 128 kHz, and each period differs a
+ * little from the last -- which firmware uses as a source of entropy,
+ * timing the watchdog against the CPU. simavr's is exact unless this is
+ * set; then each period is the nominal one / (1 + offset) and off that by
+ * up to +/- jitter, drawn from a generator started at seed (the same seed,
+ * the same periods). All zero turns it off again.
+ */
+typedef struct avr_watchdog_osc_t {
+	int32_t		offset_ppm;
+	uint32_t	jitter_ppm;
+	uint32_t	seed;
+} avr_watchdog_osc_t;
+
+/* takes an avr_watchdog_osc_t */
+#define AVR_IOCTL_WATCHDOG_SET_OSC	AVR_IOCTL_DEF('w','d','t','o')
 
 /* takes no parameter */
 #define AVR_IOCTL_WATCHDOG_RESET	AVR_IOCTL_DEF('w','d','t','r')

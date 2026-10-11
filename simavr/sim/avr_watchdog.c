@@ -24,6 +24,24 @@
 #include <stdlib.h>
 #include "avr_watchdog.h"
 
+/* The next period, in CPU cycles: cycle_count, as the oscillator makes it. */
+static avr_cycle_count_t avr_watchdog_period(avr_watchdog_t * p)
+{
+	if (!p->osc.offset_ppm && !p->osc.jitter_ppm)
+		return p->cycle_count;
+	double period = p->cycle_count / (1.0 + p->osc.offset_ppm / 1e6);
+	if (p->osc.jitter_ppm) {
+		uint32_t x = p->osc.rng;	// xorshift32
+		x ^= x << 13;
+		x ^= x >> 17;
+		x ^= x << 5;
+		p->osc.rng = x;
+		double r = (x / 4294967295.0) * 2.0 - 1.0;	// -1..1
+		period *= 1.0 + r * p->osc.jitter_ppm / 1e6;
+	}
+	return period < 1 ? 1 : (avr_cycle_count_t)(period + 0.5);
+}
+
 static avr_cycle_count_t avr_watchdog_timer(
 		struct avr_t * avr, avr_cycle_count_t when, void * param)
 {
@@ -32,7 +50,7 @@ static avr_cycle_count_t avr_watchdog_timer(
 	if (avr_regbit_get(avr, p->watchdog.enable)) {
 		AVR_LOG(avr, LOG_TRACE, "WATCHDOG: timer fired.\n");
 		avr_raise_interrupt(avr, &p->watchdog);
-		return when + p->cycle_count;
+		return when + avr_watchdog_period(p);
 	} else if (avr_regbit_get(avr, p->wde)) {
 		AVR_LOG(avr, LOG_TRACE,
 				"WATCHDOG: timer fired without interrupt. Resetting\n");
@@ -87,7 +105,7 @@ static void avr_watchdog_set_cycle_count_and_timer(
 				message[enable_changed][wdp_changed], 2048 << wdp,
 				1 << wdp, (int)p->cycle_count);
 
-		avr_cycle_timer_register(avr, p->cycle_count, avr_watchdog_timer, p);
+		avr_cycle_timer_register(avr, avr_watchdog_period(p), avr_watchdog_timer, p);
 	} else if (enable_changed) {
 		AVR_LOG(avr, LOG_TRACE, "WATCHDOG: disabled\n");
 		avr_cycle_timer_cancel(avr, avr_watchdog_timer, p);
@@ -152,8 +170,16 @@ static int avr_watchdog_ioctl(
 	if (ctl == AVR_IOCTL_WATCHDOG_RESET) {
 		if (avr_regbit_get(p->io.avr, p->wde) ||
 				avr_regbit_get(p->io.avr, p->watchdog.enable))
-			avr_cycle_timer_register(p->io.avr, p->cycle_count,
+			avr_cycle_timer_register(p->io.avr, avr_watchdog_period(p),
 					avr_watchdog_timer, p);
+		res = 0;
+	} else if (ctl == AVR_IOCTL_WATCHDOG_SET_OSC) {
+		avr_watchdog_osc_t * o = io_param;
+		if (!o)
+			return -1;
+		p->osc.offset_ppm = o->offset_ppm;
+		p->osc.jitter_ppm = o->jitter_ppm;
+		p->osc.rng = o->seed ? o->seed : 0x2545F491;	// xorshift: never 0
 		res = 0;
 	}
 
