@@ -143,6 +143,9 @@ avr_flash_ioctl(
 					AVR_LOG(avr, LOG_TRACE, "FLASH: Setting lock bits (ignored)\n");
 				} else if (p->flags & AVR_SELFPROG_HAVE_RWW && avr_regbit_get(avr, p->rwwsre)) {
 					avr_flash_clear_temppage(p);
+				} else if (p->ctpb.reg && avr_regbit_get(avr, p->ctpb)) {
+					AVR_LOG(avr, LOG_TRACE, "FLASH: Clearing temppage\n");
+					avr_flash_clear_temppage(p);
 				} else {
 					AVR_LOG(avr, LOG_TRACE, "FLASH: Writing temppage %08x (%04x)\n", z, r01);
 					z >>= 1;
