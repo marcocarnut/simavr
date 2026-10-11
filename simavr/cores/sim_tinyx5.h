@@ -88,6 +88,7 @@ const struct mcu_t SIM_CORENAME = {
 		.pgers = AVR_IO_REGBIT(SPMCSR, PGERS),
 		.pgwrt = AVR_IO_REGBIT(SPMCSR, PGWRT),
 		.blbset = AVR_IO_REGBIT(SPMCSR, RFLB),
+		.ctpb = AVR_IO_REGBIT(SPMCSR, CTPB),
 	},
 	AVR_EEPROM_DECLARE(EE_RDY_vect),
 	AVR_WATCHDOG_DECLARE(WDTCR, WDT_vect),

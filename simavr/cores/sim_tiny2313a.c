@@ -98,6 +98,7 @@ static const struct mcu_t {
 		.pgers = AVR_IO_REGBIT(SPMCSR, PGERS),
 		.pgwrt = AVR_IO_REGBIT(SPMCSR, PGWRT),
 		.blbset = AVR_IO_REGBIT(SPMCSR, RFLB),
+		.ctpb = AVR_IO_REGBIT(SPMCSR, CTPB),
 	},
 	.extint = {
 		AVR_EXTINT_TINY_DECLARE(0, 'D', 2, GIFR),

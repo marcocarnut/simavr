@@ -48,6 +48,7 @@ typedef struct avr_flash_t {
 	avr_regbit_t rwwsre;    // read while write section read enable
 	avr_regbit_t rwwsb;		// read while write section busy
 	avr_regbit_t sigrd;		// signature (and serial number) byte read
+	avr_regbit_t ctpb;		// clear temporary page buffer (the tinies)
 
 	avr_int_vector_t flash;	// Interrupt vector
 } avr_flash_t;
