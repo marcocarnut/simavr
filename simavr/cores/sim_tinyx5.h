@@ -35,6 +35,10 @@
 #include "avr_acomp.h"
 #include "avr_usi.h"
 
+/* timer 1 in PWM mode (PWM1A or PWM1B): counts to OCR1C, TOV1 there */
+#define TINYX5_TIMER1_PWM { .kind = avr_timer_wgm_fast_pwm, .size = 8, \
+		.top = avr_timer_wgm_reg_ocrc }
+
 void tx5_init(struct avr_t * avr);
 void tx5_reset(struct avr_t * avr);
 
@@ -210,12 +214,17 @@ const struct mcu_t SIM_CORENAME = {
 	.timer1 = {
 		.name = '1',
 		// timer1 has no wgm bits, but CTC1 (clear on a match with OCR1C)
-		// works as one, choosing the TOP
-		.wgm = { AVR_IO_REGBIT(TCCR1, CTC1) },
+		// and PWM1A/PWM1B work as them: CTC1 alone counts to OCR1C with no
+		// overflow; either PWM bit counts to OCR1C and sets TOV1 there
+		.wgm = { AVR_IO_REGBIT(TCCR1, CTC1), AVR_IO_REGBIT(TCCR1, PWM1A),
+				 AVR_IO_REGBIT(GTCCR, PWM1B) },
 		.wgm_op = {
 			[0] = AVR_TIMER_WGM_NORMAL8(),
 			[1] = { .kind = avr_timer_wgm_normal, .size = 8,
 					.top = avr_timer_wgm_reg_ocrc },
+			[2] = TINYX5_TIMER1_PWM, [3] = TINYX5_TIMER1_PWM,
+			[4] = TINYX5_TIMER1_PWM, [5] = TINYX5_TIMER1_PWM,
+			[6] = TINYX5_TIMER1_PWM, [7] = TINYX5_TIMER1_PWM,
 		},
 		.cs = { AVR_IO_REGBIT(TCCR1, CS10), AVR_IO_REGBIT(TCCR1, CS11), AVR_IO_REGBIT(TCCR1, CS12), AVR_IO_REGBIT(TCCR1, CS13) },
 		.cs_div = { 0, 0, 1 /* 2 */, 2 /* 4 */, 3 /* 8 */, 4 /* 16 */, 5 /* 32 */, 6 /* 64 */, 7 /* 128 */, 8 /* 256 */, 9 /* 512 */, 10 /* 1024 */, 11 /* 2048 */, 12 /* 4096 */, 13 /* 8192 */, 14 /* 16384 */ },

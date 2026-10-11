@@ -316,8 +316,10 @@ avr_timer_tov(
 		}
 	}
 
-	// cleared on OCR1C, an ATtiny85's timer 1 never reaches $FF to overflow
-	if (!start && p->mode.top != avr_timer_wgm_reg_ocrc)
+	// cleared on OCR1C (CTC1, no PWM), an ATtiny85's timer 1 never reaches
+	// $FF to overflow; in PWM mode it sets TOV1 at OCR1C
+	if (!start && !(p->mode.top == avr_timer_wgm_reg_ocrc &&
+			p->wgm_op_mode_kind == avr_timer_wgm_normal))
 		avr_raise_interrupt(avr, &p->overflow);
 	p->tov_base = when;
 
@@ -599,6 +601,7 @@ avr_timer_reconfigure(
 		case avr_timer_wgm_fast_pwm: {
 			uint16_t top =
 				(p->mode.top == avr_timer_wgm_reg_icr) ? _timer_get_icr(p) :
+				(p->mode.top == avr_timer_wgm_reg_ocrc) ? _timer_get_ocr(p, AVR_TIMER_COMPC) :
 				p->wgm_op_mode_size;
 			avr_timer_configure(p, p->cs_div_value, top, reset);
 		}	break;
