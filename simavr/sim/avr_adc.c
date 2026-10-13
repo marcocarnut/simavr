@@ -118,30 +118,27 @@ avr_adc_convert(struct avr_t * avr, avr_cycle_count_t when, void * param)
 //			mux.kind, mux.diff, mux.src,
 //			reg, refi, ref, vref);
 
+	// the range of results: 0..0x3ff, or -0x200..0x1ff bipolar; outside
+	// it, the result is the nearest end
+	int32_t lo = 0, hi = 0x3ff;
         if (mux.kind == ADC_MUX_DIFF) {
                 if (p->current_extras.negate)
                         reg = -reg;
                 if (p->current_extras.bipolar) {
                         reg = (reg * (int32_t)0x1ff) / vref; // scale to 9 bits
-                        if (reg > (int32_t)0x1ff) {
-                                clipped = 0x1ff;
-                        } else if (reg < -(int32_t)0x1ff) {
-                                clipped = 0x200;
-                        }
+                        lo = -0x200;
+                        hi = 0x1ff;
                 } else {
                         reg = (reg * (int32_t)0x3ff) / vref; // scale to 10 bit
-                        if (reg < 0 || reg > (int32_t)0x3ff)
-                                clipped = 0x1ff;
                 }
         } else {
             reg = (reg * (int32_t)0x3ff) / vref;	// scale to 10 bits
-            if (reg < 0 || reg > (int32_t)0x3ff)
-                clipped = 0x3ff;
         }
 //	printf("ADC to 9/10 bits 0x%x %d\n", reg, reg);
-	if (clipped) {
+	if (reg < lo || reg > hi) {
+		clipped = reg < lo ? lo : hi;
 		AVR_LOG(avr, LOG_WARNING,
-                        "ADC: channel %d clipped %u/%u VREF %d\n",
+                        "ADC: channel %d clipped %d/%d VREF %d\n",
                         p->current_muxi, reg, clipped, vref);
 		reg = clipped;
 	}
