@@ -330,6 +330,12 @@ avr_timer_tov(
 				avr_cycle_timer_register(avr,
 					p->comp[compi].comp_cycles - (avr->cycle - next),
 					dispatch[compi], p);
+			} else if (p->comp[compi].comp_cycles < p->tov_cycles && !start) {
+				// the overflow is serviced at an instruction boundary,
+				// a few cycles late: a match due in those cycles is in
+				// this period, not the next
+				avr_timer_comp_on_tov(p, when, compi);
+				dispatch[compi](avr, when + p->comp[compi].comp_cycles, param);
 			} else if (p->tov_cycles == p->comp[compi].comp_cycles && !start)
 				dispatch[compi](avr, when, param);
 		}
