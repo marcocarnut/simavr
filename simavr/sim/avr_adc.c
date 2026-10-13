@@ -45,6 +45,26 @@ avr_adc_int_raise(
 	return 0;
 }
 
+/* This conversion's offset and noise, in uV at the input. */
+static double
+avr_adc_noise(avr_adc_t * p)
+{
+	double n = 0;
+	if (p->noise.noise_uv) {
+		// Gaussian enough: 12 uniforms in 0..1, less 6, have sigma 1
+		for (int i = 0; i < 12; i++) {
+			uint32_t x = p->noise.rng;	// xorshift32
+			x ^= x << 13;
+			x ^= x >> 17;
+			x ^= x << 5;
+			p->noise.rng = x;
+			n += x / 4294967296.0;
+		}
+		n = (n - 6.0) * p->noise.noise_uv;
+	}
+	return p->noise.offset_uv + n;
+}
+
 static avr_cycle_count_t
 avr_adc_convert(struct avr_t * avr, avr_cycle_count_t when, void * param)
 {
@@ -65,6 +85,8 @@ avr_adc_convert(struct avr_t * avr, avr_cycle_count_t when, void * param)
 	uint8_t shift = p->current_extras.adjust ? 6 : 0; // shift LEFT
 
 	int32_t reg = 0, clipped = 0;
+	double noise_mv = 0;	// at the input, times the gain
+	int noisy = p->noise.offset_uv || p->noise.noise_uv;
 	switch (mux.kind) {
 		case ADC_MUX_SINGLE:
 			reg = p->adc_values[mux.src];
@@ -74,9 +96,12 @@ avr_adc_convert(struct avr_t * avr, avr_cycle_count_t when, void * param)
 				mux.gain = 1;
 			reg = ((uint32_t)p->adc_values[mux.src] * mux.gain) -
 					((uint32_t)p->adc_values[mux.diff] * mux.gain);
+			if (noisy)
+				noise_mv = avr_adc_noise(p) * mux.gain / 1000.0;
 			break;
 		case ADC_MUX_TEMP:
 			reg = p->temp; // assumed to be already calibrated somehow
+			noisy = 0;
 			break;
 		case ADC_MUX_REF:
 			reg = mux.src; // reference voltage
@@ -88,6 +113,8 @@ avr_adc_convert(struct avr_t * avr, avr_cycle_count_t when, void * param)
 				reg = avr->vcc / 4;
 			break;
 	}
+	if (noisy && mux.kind != ADC_MUX_DIFF)
+		noise_mv = avr_adc_noise(p) / 1000.0;
 
 	int32_t vref = 3300;
 	uint16_t ref = p->ref_values[p->current_refi];
@@ -122,19 +149,22 @@ avr_adc_convert(struct avr_t * avr, avr_cycle_count_t when, void * param)
                 if (p->current_extras.negate)
                         reg = -reg;
                 if (p->current_extras.bipolar) {
-                        reg = (reg * (int32_t)0x1ff) / vref; // scale to 9 bits
+                        reg = noisy ? (int32_t)((reg + noise_mv) * 0x1ff / vref) :
+					(reg * (int32_t)0x1ff) / vref; // scale to 9 bits
                         if (reg > (int32_t)0x1ff) {
                                 clipped = 0x1ff;
                         } else if (reg < -(int32_t)0x1ff) {
                                 clipped = 0x200;
                         }
                 } else {
-                        reg = (reg * (int32_t)0x3ff) / vref; // scale to 10 bit
+                        reg = noisy ? (int32_t)((reg + noise_mv) * 0x3ff / vref) :
+					(reg * (int32_t)0x3ff) / vref; // scale to 10 bit
                         if (reg < 0 || reg > (int32_t)0x3ff)
                                 clipped = 0x1ff;
                 }
         } else {
-            reg = (reg * (int32_t)0x3ff) / vref;	// scale to 10 bits
+            reg = noisy ? (int32_t)((reg + noise_mv) * 0x3ff / vref) :
+				(reg * (int32_t)0x3ff) / vref;	// scale to 10 bits
             if (reg < 0 || reg > (int32_t)0x3ff)
                 clipped = 0x3ff;
         }
@@ -380,6 +410,24 @@ static void avr_adc_reset(avr_io_t * port)
 		avr_irq_register_notify(p->io.irq + i, avr_adc_irq_notify, p);
 }
 
+static int
+avr_adc_ioctl(
+		struct avr_io_t * port, uint32_t ctl, void * io_param)
+{
+	avr_adc_t * p = (avr_adc_t *)port;
+
+	if (ctl == AVR_IOCTL_ADC_SET_NOISE) {
+		avr_adc_noise_t * n = io_param;
+		if (!n)
+			return -1;
+		p->noise.offset_uv = n->offset_uv;
+		p->noise.noise_uv = n->noise_uv;
+		p->noise.rng = n->seed ? n->seed : 0x2545F491;	// xorshift: never 0
+		return 0;
+	}
+	return -1;
+}
+
 static const char * irq_names[ADC_IRQ_COUNT] = {
 	[ADC_IRQ_ADC0] = "16<adc0",
 	[ADC_IRQ_ADC1] = "16<adc1",
@@ -405,6 +453,7 @@ static const char * irq_names[ADC_IRQ_COUNT] = {
 static	avr_io_t	_io = {
 	.kind = "adc",
 	.reset = avr_adc_reset,
+	.ioctl = avr_adc_ioctl,
 	.irq_names = irq_names,
 };
 

@@ -24,6 +24,7 @@
 #include <libgen.h>
 #include <string.h>
 #include <signal.h>
+#include "avr_adc.h"
 #include "sim_avr.h"
 #include "sim_elf.h"
 #include "sim_core.h"
@@ -71,6 +72,10 @@ display_usage(
 	 "                           <name=[sram8|sram16]@addr>] or \n"
 	 "                           <name=ioirq@XXXX/N\n"
 	 "                           Add signal to be included in VCD output\n"
+	 "       [--adc-noise <offset_uv>,<noise_uv>[,<seed>]]\n"
+	 "                           Add offset and Gaussian noise (sigma) at the\n"
+	 "                           ADC's input, times a differential channel's\n"
+	 "                           gain (default: exact)\n"
 	 "       [-ff <.hex file>]   Load next .hex file as flash\n"
 	 "       [-ee <.hex file>]   Load next .hex file as eeprom\n"
 	 "       <firmware>          A .hex or an ELF file. ELF files are\n"
@@ -125,6 +130,7 @@ main(
 #endif //CONFIG_SIMAVR_TRACE
 	elf_firmware_t f = {{0}};
 	uint32_t f_cpu = 0;
+	avr_adc_noise_t adc_noise = { 0 };
 	int gdb = 0;
 	int list_irqs = 0;
 	int log = LOG_ERROR;
@@ -293,6 +299,14 @@ main(
 			gdb++;
 			if (pi < (argc-2) && argv[pi+1][0] != '-' )
 				port = atoi(argv[++pi]);
+		} else if (!strcmp(argv[pi], "--adc-noise")) {
+			if (pi + 1 >= argc ||
+					sscanf(argv[++pi], "%d,%u,%u", &adc_noise.offset_uv,
+						   &adc_noise.noise_uv, &adc_noise.seed) < 2) {
+				fprintf(stderr, "%s: --adc-noise wants <offset_uv>,<noise_uv>[,<seed>]\n",
+						argv[0]);
+				exit(1);
+			}
 		} else if (!strcmp(argv[pi], "-v")) {
 			log++;
 		} else if (!strcmp(argv[pi], "-ee")) {
@@ -327,6 +341,8 @@ main(
 #endif //CONFIG_SIMAVR_TRACE
 
 	avr_load_firmware(avr, &f);
+	if (adc_noise.offset_uv || adc_noise.noise_uv)
+		avr_ioctl(avr, AVR_IOCTL_ADC_SET_NOISE, &adc_noise);
 	if (f.flashbase) {
 		printf("Attempted to load a bootloader at %04x\n", f.flashbase);
 		avr->pc = f.flashbase;

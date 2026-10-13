@@ -156,7 +156,36 @@ typedef struct avr_adc_t {
         /* Buffered conversion result. */
 
         uint16_t                result;
+
+	/* noise at the input, as a real one has: off unless set (see below) */
+	struct {
+		int32_t		offset_uv;
+		uint32_t	noise_uv;
+		uint32_t	rng;		// xorshift32 state, from the seed
+	} noise;
 } avr_adc_t;
+
+/*
+ * Noise and offset at the converter's input. simavr's ADC is exact: the
+ * same voltage always reads the same, and a differential channel with both
+ * inputs on one pin always reads 0. On a chip each conversion is off by
+ * some noise, and a gain stage adds its offset -- which firmware uses as a
+ * source of entropy, reading such a channel at high gain. Unless this is
+ * set, nothing changes; then each conversion's input is off by offset_uv
+ * plus Gaussian noise of standard deviation noise_uv, drawn from a
+ * generator started at seed (the same seed, the same readings), times the
+ * gain on a differential channel. It applies to the channels read in mV
+ * (single, differential, the references, VCC/4), not the temperature
+ * sensor. All zero turns it off again.
+ */
+typedef struct avr_adc_noise_t {
+	int32_t		offset_uv;
+	uint32_t	noise_uv;
+	uint32_t	seed;
+} avr_adc_noise_t;
+
+/* takes an avr_adc_noise_t */
+#define AVR_IOCTL_ADC_SET_NOISE		AVR_IOCTL_DEF('a','d','c','n')
 
 void avr_adc_init(avr_t * avr, avr_adc_t * port);
 
