@@ -15,6 +15,7 @@
 
 	You should have received a copy of the GNU General Public License
 	along with simavr.  If not, see <http://www.gnu.org/licenses/>.
+ */
 
 /*
  * The ADC as firmware gathers entropy from it: ADC0-ADC0 at 20x gain,
