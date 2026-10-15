@@ -16,6 +16,8 @@
 	GNU General Public License for more details.
 
 	You should have received a copy of the GNU General Public License
+	along with simavr.  If not, see <http://www.gnu.org/licenses/>.
+ */
 
 /*
  * Timer 1 in normal mode: a compare match at OCR1A 0 to 3, set late in the
