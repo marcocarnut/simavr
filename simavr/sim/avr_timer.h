@@ -55,6 +55,9 @@ enum {
 #define AVR_IOCTL_TIMER_SET_VIRTCLK(_number) AVR_IOCTL_DEF('t','m','v',(_number))
 // set frequency of the virtual clock generator
 #define AVR_IOCTL_TIMER_SET_FREQCLK(_number) AVR_IOCTL_DEF('t','m','f',(_number))
+// the analog comparator, not the ICP pin, drives the input capture (ACIC);
+// takes a uint8_t *, 1 for the comparator, 0 for the pin
+#define AVR_IOCTL_TIMER_SET_ICP_AC(_number) AVR_IOCTL_DEF('t','m','a',(_number))
 
 // Waveform generation modes
 enum {

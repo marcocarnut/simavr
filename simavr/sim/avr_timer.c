@@ -816,6 +816,33 @@ avr_timer_irq_icp(
 	avr_raise_interrupt(avr, &p->icr);
 }
 
+/*
+ * Connect the ICP pin to the input capture, or not: while the analog
+ * comparator drives it (ACIC), the pin doesn't. Back to the pin, the
+ * capture sees the pin's level -- which, as the datasheet warns, can
+ * trigger a capture.
+ */
+static void
+avr_timer_connect_icp_pin(
+		avr_timer_t * p,
+		int connect,
+		int raise)
+{
+	avr_ioport_getirq_t req = {
+		.bit = p->icp
+	};
+	if (avr_ioctl(p->io.avr, AVR_IOCTL_IOPORT_GETIRQ_REGBIT, &req) <= 0)
+		return;
+	// cool, got an IRQ for the input capture pin
+	if (connect) {
+		avr_connect_irq(req.irq[0], p->io.irq + TIMER_IRQ_IN_ICP);
+		if (raise)
+			avr_raise_irq(p->io.irq + TIMER_IRQ_IN_ICP,
+					(req.irq[0]->value & 0xff) != 0);
+	} else
+		avr_unconnect_irq(req.irq[0], p->io.irq + TIMER_IRQ_IN_ICP);
+}
+
 static int
 avr_timer_ioctl(
 		avr_io_t * port,
@@ -844,6 +871,9 @@ avr_timer_ioctl(
 				}
 			}
 		}
+	} else if (ctl == AVR_IOCTL_TIMER_SET_ICP_AC(p->name)) {
+		avr_timer_connect_icp_pin(p, !*((uint8_t*)io_param), 1);
+		return 0;
 	} else if (ctl == AVR_IOCTL_TIMER_SET_VIRTCLK(p->name)) {
 		uint8_t new_val = *((uint8_t*)io_param);
 		if (!new_val) {
@@ -891,14 +921,7 @@ avr_timer_reset(
 
 	avr_irq_register_notify(port->irq + TIMER_IRQ_IN_ICP, avr_timer_irq_icp, p);
 
-	avr_ioport_getirq_t req = {
-		.bit = p->icp
-	};
-	if (avr_ioctl(port->avr, AVR_IOCTL_IOPORT_GETIRQ_REGBIT, &req) > 0) {
-		// cool, got an IRQ for the input capture pin
-		//printf("%s-%c ICP Connecting PIN IRQ %d\n", __func__, p->name, req.irq[0]->irq);
-		avr_connect_irq(req.irq[0], port->irq + TIMER_IRQ_IN_ICP);
-	}
+	avr_timer_connect_icp_pin(p, 1, 0);
 	p->ext_clock_flags &= ~(AVR_TIMER_EXTCLK_FLAG_STARTED | AVR_TIMER_EXTCLK_FLAG_TN |
 							AVR_TIMER_EXTCLK_FLAG_AS2 | AVR_TIMER_EXTCLK_FLAG_REVDIR);
 
