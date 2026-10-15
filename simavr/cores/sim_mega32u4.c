@@ -48,6 +48,7 @@
 #include "avr_twi.h"
 #include "avr_acomp.h"
 #include "avr_usb.h"
+#include "avr_timer_hs.h"
 
 void m32u4_init(struct avr_t * avr);
 void m32u4_reset(struct avr_t * avr);
@@ -75,6 +76,7 @@ const struct mcu_t {
 	avr_acomp_t		acomp;
 	avr_adc_t		adc;
 	avr_timer_t		timer0, timer1, timer3;
+	avr_timer_hs_t	timer4;
 	avr_spi_t		spi;
 	avr_twi_t		twi;
 	avr_usb_t		usb;
@@ -387,7 +389,64 @@ const struct mcu_t {
 			}
 		}
 	},
-	//  .timer4 = { /* TODO 10 bits realtime timer */ },
+	.timer4 = {
+		.name = '4',
+		.r_tcnt = TCNT4L,
+		.r_tch = TC4H,
+		.r_ocrc = OCR4C,
+		.cs = { AVR_IO_REGBIT(TCCR4B, CS40), AVR_IO_REGBIT(TCCR4B, CS41),
+				AVR_IO_REGBIT(TCCR4B, CS42), AVR_IO_REGBIT(TCCR4B, CS43) },
+		.psr = AVR_IO_REGBIT(TCCR4B, PSR4),
+		.wgm = { AVR_IO_REGBIT(TCCR4D, WGM40), AVR_IO_REGBIT(TCCR4D, WGM41) },
+		.enhc = AVR_IO_REGBIT(TCCR4E, ENHC4),
+		.pll_tm = AVR_IO_REGBITS(PLLFRQ, PLLTM0, 0x3),
+
+		.overflow = {
+			.enable = AVR_IO_REGBIT(TIMSK4, TOIE4),
+			.raised = AVR_IO_REGBIT(TIFR4, TOV4),
+			.vector = TIMER4_OVF_vect,
+		},
+		.comp = {
+			[AVR_TIMER_HS_COMPA] = {
+				.r_ocr = OCR4A,
+				.com = AVR_IO_REGBITS(TCCR4A, COM4A0, 0x3),
+				.com_shadow = AVR_IO_REGBITS(TCCR4C, COM4A0S, 0x3),
+				.foc = AVR_IO_REGBIT(TCCR4A, FOC4A),
+				.pwm = AVR_IO_REGBIT(TCCR4A, PWM4A),
+				.com_pin = AVR_IO_REGBIT(PORTC, 7),
+				.interrupt = {
+					.enable = AVR_IO_REGBIT(TIMSK4, OCIE4A),
+					.raised = AVR_IO_REGBIT(TIFR4, OCF4A),
+					.vector = TIMER4_COMPA_vect,
+				}
+			},
+			[AVR_TIMER_HS_COMPB] = {
+				.r_ocr = OCR4B,
+				.com = AVR_IO_REGBITS(TCCR4A, COM4B0, 0x3),
+				.com_shadow = AVR_IO_REGBITS(TCCR4C, COM4B0S, 0x3),
+				.foc = AVR_IO_REGBIT(TCCR4A, FOC4B),
+				.pwm = AVR_IO_REGBIT(TCCR4A, PWM4B),
+				.com_pin = AVR_IO_REGBIT(PORTB, 6),
+				.interrupt = {
+					.enable = AVR_IO_REGBIT(TIMSK4, OCIE4B),
+					.raised = AVR_IO_REGBIT(TIFR4, OCF4B),
+					.vector = TIMER4_COMPB_vect,
+				}
+			},
+			[AVR_TIMER_HS_COMPD] = {
+				.r_ocr = OCR4D,
+				.com = AVR_IO_REGBITS(TCCR4C, COM4D0, 0x3),
+				.foc = AVR_IO_REGBIT(TCCR4C, FOC4D),
+				.pwm = AVR_IO_REGBIT(TCCR4C, PWM4D),
+				.com_pin = AVR_IO_REGBIT(PORTD, 7),
+				.interrupt = {
+					.enable = AVR_IO_REGBIT(TIMSK4, OCIE4D),
+					.raised = AVR_IO_REGBIT(TIFR4, OCF4D),
+					.vector = TIMER4_COMPD_vect,
+				}
+			}
+		}
+	},
 	AVR_SPI_DECLARE(PRR0, PRSPI),
 	.twi = {
 
@@ -458,6 +517,7 @@ void m32u4_init(struct avr_t * avr)
 	avr_timer_init(avr, &mcu->timer0);
 	avr_timer_init(avr, &mcu->timer1);
 	avr_timer_init(avr, &mcu->timer3);
+	avr_timer_hs_init(avr, &mcu->timer4);
 	avr_spi_init(avr, &mcu->spi);
 	avr_twi_init(avr, &mcu->twi);
 	avr_usb_init(avr, &mcu->usb);
