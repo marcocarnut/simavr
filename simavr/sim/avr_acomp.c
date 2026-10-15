@@ -109,15 +109,21 @@ avr_acomp_write_acsr(
 	avr_core_watch_write(avr, addr, v);
 
 	if (avr_regbit_get(avr, p->acic) != (p->timer_irq ? 1:0)) {
+		// the comparator replaces the ICP pin as the capture's input
+		uint8_t acic = !p->timer_irq;
 		if (p->timer_irq) {
 			avr_unconnect_irq(p->io.irq + ACOMP_IRQ_OUT, p->timer_irq);
 			p->timer_irq = NULL;
+			avr_ioctl(avr, AVR_IOCTL_TIMER_SET_ICP_AC(p->timer_name), &acic);
 		}
 		else {
 			avr_irq_t *irq = avr_io_getirq(avr, AVR_IOCTL_TIMER_GETIRQ(p->timer_name), TIMER_IRQ_IN_ICP);
 			if (irq) {
+				avr_ioctl(avr, AVR_IOCTL_TIMER_SET_ICP_AC(p->timer_name), &acic);
 				avr_connect_irq(p->io.irq + ACOMP_IRQ_OUT, irq);
 				p->timer_irq = irq;
+				// the capture now sees the comparator's output
+				avr_raise_irq(irq, avr_regbit_get(avr, p->aco));
 			}
 		}
 	}
@@ -172,6 +178,12 @@ static void
 avr_acomp_reset(avr_io_t * port)
 {
 	avr_acomp_t * p = (avr_acomp_t *)port;
+
+	// ACIC is 0 after a reset; the timer connects its ICP pin again itself
+	if (p->timer_irq) {
+		avr_unconnect_irq(p->io.irq + ACOMP_IRQ_OUT, p->timer_irq);
+		p->timer_irq = NULL;
+	}
 
 	for (int i = 0; i < ACOMP_IRQ_COUNT; i++)
 		avr_irq_register_notify(p->io.irq + i, avr_acomp_irq_notify, p);
