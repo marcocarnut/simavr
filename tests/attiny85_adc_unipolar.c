@@ -15,6 +15,7 @@
 
 	You should have received a copy of the GNU General Public License
 	along with simavr.  If not, see <http://www.gnu.org/licenses/>.
+ */
 
 /*
  * Differential, unipolar (BIN clear): the result is from 0 to 0x3ff, and a
