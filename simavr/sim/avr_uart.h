@@ -87,6 +87,9 @@ enum {
 	AVR_UART_FLAG_POLL_SLEEP = (1 << 0),		// to replace POOL_SLEEP.
 	AVR_UART_FLAG_STDIO = (1 << 1),				// Print lines on the console
 	AVR_UART_FLAG_RAW = (1 << 2),				// ... modifier, raw output,
+	// TXEN is 0 after a reset, as on the chip; without it simavr sets TXEN
+	// at reset, so that firmware can print without enabling the UART
+	AVR_UART_FLAG_TXEN_RESET_OFF = (1 << 3),
 };
 
 typedef struct avr_uart_t {
@@ -124,6 +127,7 @@ typedef struct avr_uart_t {
 	uint32_t	rx_cnt;			// number of characters read by app since rxc_raise_time
 
 	uint32_t		flags;
+	uint8_t			txen_by_reset;	// TXEN is set by the reset, not the firmware
 	avr_cycle_count_t cycles_per_byte;
 	avr_cycle_count_t rxc_raise_time; // the cpu cycle when rxc flag was raised last time
 

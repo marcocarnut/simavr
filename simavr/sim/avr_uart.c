@@ -352,6 +352,8 @@ avr_uart_write(
 	}
 
 	uint8_t txen = avr_regbit_get(avr, p->txen);
+	if (addr == p->txen.reg)
+		p->txen_by_reset = 0;
 	uint8_t rxen = avr_regbit_get(avr, p->rxen);
 	uint8_t udrce = avr_regbit_get(avr, p->udrc.enable);
 	// Now write whatever bits could be writen directly.
@@ -463,7 +465,9 @@ avr_uart_reset(
 	avr_regbit_clear(avr, p->ucsz2);
 
 	// DEBUG allow printf without fiddling with enabling the uart
-	avr_regbit_set(avr, p->txen);
+	p->txen_by_reset = !(p->flags & AVR_UART_FLAG_TXEN_RESET_OFF);
+	if (p->txen_by_reset)
+		avr_regbit_set(avr, p->txen);
 	p->cycles_per_byte = avr_usec_to_cycles(avr, 100);
 }
 
@@ -481,6 +485,12 @@ avr_uart_ioctl(
 
 	if (ctl == AVR_IOCTL_UART_SET_FLAGS(p->name)) {
 		p->flags = *(uint32_t*)io_param;
+		// set after the reset, before the firmware has written UCSRnB:
+		// take back the TXEN that the reset gave it
+		if ((p->flags & AVR_UART_FLAG_TXEN_RESET_OFF) && p->txen_by_reset) {
+			avr_regbit_clear(p->io.avr, p->txen);
+			p->txen_by_reset = 0;
+		}
 		res = 0;
 	}
 	if (ctl == AVR_IOCTL_UART_GET_FLAGS(p->name)) {
