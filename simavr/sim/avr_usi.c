@@ -79,6 +79,15 @@ static void _avr_usi_clock_usidr(struct avr_t * avr, avr_usi_t * p)
 	_avr_usi_set_usidr(avr, p, ((avr->data[p->r_usidr] & ~0x80) << 1) | (p->in_bit0 ? 1 : 0));
 }
 
+/* In two-wire mode SDA and SCL are open drain */
+static void _avr_usi_opendrain(struct avr_t * avr, avr_usi_t * p, uint8_t on)
+{
+	avr_ioport_opendrain_t od = { .bit = p->pin_di, .on = on };
+	avr_ioctl(avr, AVR_IOCTL_IOPORT_SET_OPENDRAIN, &od);
+	od.bit = p->pin_usck;
+	avr_ioctl(avr, AVR_IOCTL_IOPORT_SET_OPENDRAIN, &od);
+}
+
 static void _avr_usi_disconnect_irqs(struct avr_t * avr, avr_usi_t * p, uint8_t old_wm)
 {
 	switch(old_wm) {
@@ -100,6 +109,7 @@ static void _avr_usi_disconnect_irqs(struct avr_t * avr, avr_usi_t * p, uint8_t 
 			if (avr_ioctl(avr, AVR_IOCTL_IOPORT_GETIRQ_REGBIT, &req_di) > 0) {
 				avr_unconnect_irq(&p->io.irq[USI_IRQ_DO], req_di.irq[0]);
 			}
+			_avr_usi_opendrain(avr, p, 0);
 			break;
 		}
 		default:
@@ -128,6 +138,7 @@ static void _avr_usi_connect_irqs(struct avr_t * avr, avr_usi_t * p, uint8_t new
 			if (avr_ioctl(avr, AVR_IOCTL_IOPORT_GETIRQ_REGBIT, &req_di) > 0) {
 				avr_connect_irq(&p->io.irq[USI_IRQ_DO], req_di.irq[0]);
 			}
+			_avr_usi_opendrain(avr, p, 1);
 			break;
 		}
 		default:
