@@ -55,6 +55,22 @@ avr_ioport_flag_bit_write(
 	return 1;
 }
 
+/*
+ * What PIN reads, from what the outside puts on the input pins (pin): an
+ * output pin reads PORT, and an open drain one also what the outside does.
+ */
+static uint8_t
+avr_ioport_pins(
+		avr_ioport_t * p,
+		uint8_t pin)
+{
+	avr_t * avr = p->io.avr;
+	uint8_t ddr = avr->data[p->r_ddr];
+	uint8_t port = avr->data[p->r_port];
+
+	return (pin & ~ddr) | (port & ddr & (~p->opendrain | p->outside));
+}
+
 static uint8_t
 avr_ioport_read(
 		struct avr_t * avr,
@@ -62,8 +78,7 @@ avr_ioport_read(
 		void * param)
 {
 	avr_ioport_t * p = (avr_ioport_t *)param;
-	uint8_t ddr = avr->data[p->r_ddr];
-	uint8_t v = (avr->data[p->r_pin] & ~ddr) | (avr->data[p->r_port] & ddr);
+	uint8_t v = avr_ioport_pins(p, avr->data[p->r_pin]);
 
 	avr->data[addr] = v;
 	avr_raise_irq(p->io.irq + IOPORT_IRQ_REG_PIN, v);
@@ -86,9 +101,13 @@ avr_ioport_update_irqs(
 	// otherwise, if the PORT pin was 1 to indicate an
 	// internal pullup, set that.
 
+	uint8_t pins = avr_ioport_pins(p, avr->data[p->r_pin]);
+	uint8_t irqing = p->irqing;
+
+	p->irqing = 1;	// these aren't the outside's
 	for (int i = 0; i < 8; i++) {
 		if (ddr & (1 << i))
-			avr_raise_irq(p->io.irq + i, (avr->data[p->r_port] >> i) & 1);
+			avr_raise_irq(p->io.irq + i, (pins >> i) & 1);
 		else if (!avr->options.no_pullups) {
 			if (p->external.pull_mask & (1 << i))
 				avr_raise_irq(p->io.irq + i,
@@ -99,7 +118,8 @@ avr_ioport_update_irqs(
 			}
 		}
 	}
-	uint8_t pin = (avr->data[p->r_pin] & ~ddr) | (avr->data[p->r_port] & ddr);
+	p->irqing = irqing;
+	uint8_t pin = avr_ioport_pins(p, avr->data[p->r_pin]);
 	pin = (pin & ~p->external.pull_mask) | p->external.pull_value;
 	avr_raise_irq(p->io.irq + IOPORT_IRQ_PIN_ALL, pin);
 }
@@ -195,8 +215,10 @@ avr_ioport_irq_notify(
 	value &= 0xff;
 	if (value && irq->irq != IOPORT_IRQ_PIN_ALL_IN)
 		value = mask;
+	if (!output && !p->irqing)
+		p->outside = (p->outside & ~mask) | (value & mask);
 	new_pin = (avr->data[p->r_pin] & ~mask) | (value & mask);
-	new_pin = (avr->data[p->r_port] & ddr) | (new_pin & ~ddr);
+	new_pin = avr_ioport_pins(p, new_pin);
 	old_value = irq->value;
 
 	if (output) {
@@ -270,6 +292,8 @@ avr_ioport_reset(
 		avr_io_t * port)
 {
 	avr_ioport_t * p = (avr_ioport_t *)port;
+	p->opendrain = 0;
+	p->outside = 0xff;
 	for (int i = 0; i < IOPORT_IRQ_PIN_ALL; i++)
 		avr_irq_register_notify(p->io.irq + i, avr_ioport_irq_notify, p);
 	avr_irq_register_notify(p->io.irq + IOPORT_IRQ_PIN_ALL_IN,
@@ -308,6 +332,19 @@ avr_ioport_ioctl(
 				if (o < 8)
 					r->irq[o] = NULL;
 				return o;
+			}
+		}	break;
+		case AVR_IOCTL_IOPORT_SET_OPENDRAIN: {
+			avr_ioport_opendrain_t * r = (avr_ioport_opendrain_t*)io_param;
+
+			if (r->bit.reg == p->r_port || r->bit.reg == p->r_pin || r->bit.reg == p->r_ddr) {
+				uint8_t m = r->bit.mask << r->bit.bit;
+				if (r->on)
+					p->opendrain |= m;
+				else
+					p->opendrain &= ~m;
+				avr_ioport_update_irqs(p);
+				res = 0;
 			}
 		}	break;
 		default: {

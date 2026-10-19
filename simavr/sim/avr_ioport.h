@@ -85,6 +85,20 @@ typedef struct avr_ioport_external_t {
 // add port name (uppercase) to set default input pin IRQ values
 #define AVR_IOCTL_IOPORT_SET_EXTERNAL(_name) AVR_IOCTL_DEF('i','o','p',(_name))
 
+/*
+ * Make pins open drain, or not: the pin is low if the port drives it low
+ * (DDR 1, PORT 0) or something outside does, and PIN reads that, not just
+ * PORT. As the USI's two-wire mode makes SDA and SCL. The ioctl takes an
+ * avr_ioport_opendrain_t *, and matches the port by bit.reg (PORT, PIN or
+ * DDR).
+ */
+typedef struct avr_ioport_opendrain_t {
+	avr_regbit_t bit;		// the pins
+	uint8_t on;
+} avr_ioport_opendrain_t;
+
+#define AVR_IOCTL_IOPORT_SET_OPENDRAIN AVR_IOCTL_DEF('i','o','o','d')
+
 /**
  * pin structure
  */
@@ -124,6 +138,9 @@ typedef struct avr_ioport_t {
 	struct {
 		uint8_t pull_mask, pull_value;
 	} external;
+
+	uint8_t		opendrain;	// pins that are open drain
+	uint8_t		outside;	// the level something outside puts on each pin
 } avr_ioport_t;
 
 void avr_ioport_init(avr_t * avr, avr_ioport_t * port);
