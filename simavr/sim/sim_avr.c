@@ -405,8 +405,9 @@ gracefully_quit(
 
 /*
  * While the CPU is halted, time goes on to the next cycle timer, or the end
- * of the halt, as when sleeping; nothing runs, and no interrupt is taken.
- * Returns 1 if it was halted.
+ * of the halt, as when sleeping, and that timer runs; then the caller gets
+ * control back. Nothing runs, and no interrupt is taken. Returns 1 if it
+ * was halted.
  */
 static int
 avr_run_halted(
@@ -424,6 +425,7 @@ avr_run_halted(
 		sleep = 1;
 	avr->sleep(avr, sleep);
 	avr->cycle += sleep;
+	avr_cycle_timer_process(avr);
 	return 1;
 }
 
