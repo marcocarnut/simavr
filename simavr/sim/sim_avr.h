@@ -237,6 +237,9 @@ typedef struct avr_t {
 	// for a maximum run cycle limit... run_cycle_count is set during cycle timer processing.
 	avr_cycle_count_t	run_cycle_count;	// cycles to run before next timer
 	avr_cycle_count_t	run_cycle_limit;	// maximum run cycle interval limit
+	// the CPU is halted until then (an SPM page erase or write): no
+	// instructions and no interrupts, but time and the cycle timers go on
+	avr_cycle_count_t	halt_until;
 
 	/**
 	 * Sleep requests are accumulated in sleep_usec until the minimum sleep value
