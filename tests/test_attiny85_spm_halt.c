@@ -6,7 +6,8 @@
  * interrupts are taken then,
  * in vector order (Timer1's first, though Timer0 overflowed first), one
  * instruction of main between them as after any RETI; the page is
- * written.
+ * written. Stepping one cycle at a time with a timer of its own, the
+ * test gets control back every cycle, halted or not.
  */
 #include <stddef.h>
 #include "tests.h"
@@ -27,6 +28,12 @@ static void gpior0(struct avr_t *avr, avr_io_addr_t addr, uint8_t v, void *param
 	}
 }
 
+static avr_cycle_count_t done(struct avr_t *avr, avr_cycle_count_t when, void *param)
+{
+	*(int *)param = 0;
+	return 0;
+}
+
 static int find(char c, int from)
 {
 	for (int i = from; i < n; i++)
@@ -44,11 +51,24 @@ static void run(uint32_t usec, int set)
 	n = 0;
 	avr_register_io_write(avr, GPIOR0, gpior0, NULL);
 	avr_cycle_count_t end = avr_usec_to_cycles(avr, 20000);
+	avr_cycle_count_t most = 0;
 	while (avr->cycle < end && n < 64) {
-		int state = avr_run(avr);
+		/* one cycle at a time, as a program driving the pins does */
+		avr_cycle_count_t c = avr->cycle;
+		int looping = 1;
+		avr_cycle_timer_register(avr, 1, done, &looping);
+		int state = cpu_Running;
+		while (looping && state != cpu_Done && state != cpu_Crashed)
+			state = avr_run(avr);
+		if (avr->cycle - c > most)
+			most = avr->cycle - c;
 		if (state == cpu_Done || state == cpu_Crashed)
 			break;
 	}
+	/* an instruction takes up to 4 cycles, interrupt entry 4 */
+	if (most > 8)
+		fail("%u us: a one cycle step took %lu cycles", usec,
+			(unsigned long)most);
 
 	avr_cycle_count_t halt = avr_usec_to_cycles(avr, set ? usec : 0);
 	int s = find('s', 0), e = find('e', s), w = find('w', e);
