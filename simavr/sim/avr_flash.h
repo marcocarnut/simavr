@@ -50,6 +50,8 @@ typedef struct avr_flash_t {
 	avr_regbit_t sigrd;		// signature (and serial number) byte read
 
 	avr_int_vector_t flash;	// Interrupt vector
+
+	uint32_t	halt_usec;	// the CPU halts that long on a page erase or write
 } avr_flash_t;
 
 /* Set if the flash supports a Read While Write section */
@@ -61,6 +63,18 @@ void avr_flash_init(avr_t * avr, avr_flash_t * p);
 
 #define AVR_IOCTL_FLASH_SPM		AVR_IOCTL_DEF('f','s','p','m')
 #define AVR_IOCTL_FLASH_LPM		AVR_IOCTL_DEF('f','l','p','m')
+
+/*
+ * Halt the CPU on a page erase or write, as the chip does, for so many
+ * microseconds: no instructions and no interrupts, while the timers and the
+ * rest go on; the interrupts flagged meanwhile are taken afterwards. Takes a
+ * uint32_t *; 0, the default, finishes the page at once. Chips without a
+ * Read While Write section only (the tinies): on the others the CPU goes on
+ * while the RWW section is written, which isn't modelled.
+ */
+#define AVR_IOCTL_FLASH_SPM_HALT	AVR_IOCTL_DEF('f','s','p','h')
+// tWD_FLASH, the datasheets' longest page erase or write time (ATtiny85: 4.5 ms)
+#define AVR_FLASH_SPM_HALT_USEC	4500
 
 #define AVR_SELFPROG_DECLARE_INTERNAL(_spmr, _spen, _vector) \
 		.r_spm = _spmr,\

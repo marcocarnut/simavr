@@ -217,6 +217,7 @@ avr_reset(
 	wdrf = avr_regbit_get(avr, avr->reset_flags.wdrf);
 
 	avr->state = cpu_Running;
+	avr->halt_until = 0;
 	for(int i = 0x20; i <= avr->ioend; i++)
 		avr->data[i] = 0;
 	_avr_sp_set(avr, avr->ramend);
@@ -402,6 +403,30 @@ gracefully_quit(
 	avr->state = cpu_Done;
 }
 
+/*
+ * While the CPU is halted, time goes on to the next cycle timer, or the end
+ * of the halt, as when sleeping; nothing runs, and no interrupt is taken.
+ * Returns 1 if it was halted.
+ */
+static int
+avr_run_halted(
+		avr_t * avr)
+{
+	if (avr->state != cpu_Running || avr->cycle >= avr->halt_until)
+		return 0;
+	avr_cycle_count_t sleep = avr_cycle_timer_process(avr);
+	avr_cycle_count_t left = avr->halt_until - avr->cycle;
+	if (avr->state != cpu_Running || !left)
+		return 1;
+	if (sleep > left)
+		sleep = left;
+	if (!sleep)
+		sleep = 1;
+	avr->sleep(avr, sleep);
+	avr->cycle += sleep;
+	return 1;
+}
+
 void
 avr_callback_run_gdb(
 		avr_t * avr)
@@ -410,6 +435,9 @@ avr_callback_run_gdb(
 
 	if (avr->state == cpu_Stopped)
 		return ;
+
+	if (avr_run_halted(avr))
+		return;
 
 	// if we are stepping one instruction, we "run" for one..
 	int step = avr->state == cpu_Step;
@@ -478,6 +506,9 @@ void
 avr_callback_run_raw(
 		avr_t * avr)
 {
+	if (avr_run_halted(avr))
+		return;
+
 	if (avr->state == cpu_Running) {
 		avr->pc = avr_run_one(avr);
 #if CONFIG_SIMAVR_TRACE
