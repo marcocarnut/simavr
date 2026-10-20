@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "avr_flash.h"
+#include "sim_time.h"
 
 static avr_cycle_count_t
 avr_progen_clear(
@@ -64,6 +65,16 @@ avr_flash_clear_temppage(
 	}
 }
 
+/* a page erase or write halts the CPU */
+static void
+avr_flash_halt(
+		avr_t * avr,
+		avr_flash_t *p)
+{
+	if (p->halt_usec && !(p->flags & AVR_SELFPROG_HAVE_RWW))
+		avr->halt_until = avr->cycle + avr_usec_to_cycles(avr, p->halt_usec);
+}
+
 static int
 avr_flash_ioctl(
 		struct avr_io_t * port,
@@ -73,6 +84,13 @@ avr_flash_ioctl(
 	avr_flash_t * p = (avr_flash_t *)port;
 	avr_t * avr = p->io.avr;
 	int res = -1;
+
+	if (ctl == AVR_IOCTL_FLASH_SPM_HALT) {
+		if (!io_param)
+			return -1;
+		p->halt_usec = *(uint32_t *)io_param;
+		return 0;
+	}
 
 	avr_flashaddr_t z = avr->data[R_ZL] | (avr->data[R_ZH] << 8);
 	if (avr->rampz)
@@ -131,6 +149,7 @@ avr_flash_ioctl(
 					AVR_LOG(avr, LOG_TRACE, "FLASH: Erasing page %04x (%d)\n", (z / p->spm_pagesize), p->spm_pagesize);
 					for (int i = 0; i < p->spm_pagesize; i++)
 						avr->flash[z++] = 0xff;
+					avr_flash_halt(avr, p);
 				} else if (avr_regbit_get(avr, p->pgwrt)) {
 					z &= ~(p->spm_pagesize - 1);
 					AVR_LOG(avr, LOG_TRACE, "FLASH: Writing page %04x (%d)\n", (z / p->spm_pagesize), p->spm_pagesize);
@@ -139,6 +158,7 @@ avr_flash_ioctl(
 						avr->flash[z++] = p->tmppage[i] >> 8;
 					}
 					avr_flash_clear_temppage(p);
+					avr_flash_halt(avr, p);
 				} else if (avr_regbit_get(avr, p->blbset)) {
 					AVR_LOG(avr, LOG_TRACE, "FLASH: Setting lock bits (ignored)\n");
 				} else if (p->flags & AVR_SELFPROG_HAVE_RWW && avr_regbit_get(avr, p->rwwsre)) {
