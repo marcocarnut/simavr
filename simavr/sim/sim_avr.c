@@ -455,6 +455,8 @@ avr_callback_run_gdb(
 	if (avr_run_halted(avr))
 		return;
 
+	int was_sleeping = avr->state == cpu_Sleeping;
+
 	// if we are stepping one instruction, we "run" for one..
 	int step = avr->state == cpu_Step;
 	if (step)
@@ -484,10 +486,17 @@ avr_callback_run_gdb(
 			return;
 		}
 		/*
-		 * try to sleep for as long as we can (?)
+		 * Sleep until the next timer, and run it, so that the caller
+		 * gets control back as it's done: an IRQ the caller raises from
+		 * a timer of its own then comes in time, not a sleep later. Not
+		 * as the CPU has just gone to sleep: the timers due now have
+		 * just run.
 		 */
-		avr->sleep(avr, sleep);
-		avr->cycle += 1 + sleep;
+		if (was_sleeping) {
+			avr->sleep(avr, sleep);
+			avr->cycle += 1 + sleep;
+			avr_cycle_timer_process(avr);
+		}
 	}
 	// Interrupt servicing might change the PC too, during 'sleep'
 	if (avr->state == cpu_Running || avr->state == cpu_Sleeping)
@@ -526,6 +535,8 @@ avr_callback_run_raw(
 	if (avr_run_halted(avr))
 		return;
 
+	int was_sleeping = avr->state == cpu_Sleeping;
+
 	if (avr->state == cpu_Running) {
 		avr->pc = avr_run_one(avr);
 #if CONFIG_SIMAVR_TRACE
@@ -549,10 +560,17 @@ avr_callback_run_raw(
 			return;
 		}
 		/*
-		 * try to sleep for as long as we can (?)
+		 * Sleep until the next timer, and run it, so that the caller
+		 * gets control back as it's done: an IRQ the caller raises from
+		 * a timer of its own then comes in time, not a sleep later. Not
+		 * as the CPU has just gone to sleep: the timers due now have
+		 * just run.
 		 */
-		avr->sleep(avr, sleep);
-		avr->cycle += 1 + sleep;
+		if (was_sleeping) {
+			avr->sleep(avr, sleep);
+			avr->cycle += 1 + sleep;
+			avr_cycle_timer_process(avr);
+		}
 	}
 	// Interrupt servicing might change the PC too, during 'sleep'
 	if (avr->state == cpu_Running || avr->state == cpu_Sleeping) {
