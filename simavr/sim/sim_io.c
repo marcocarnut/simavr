@@ -196,9 +196,9 @@ _avr_io_sbs_write(struct avr_t *avr,
 {
 	struct bit_cb *cp = (struct bit_cb *)param + bit;
 
-	if (cp)
-		cp->c(avr, bit, v, cp->param);
-	return 1; // 0 would cause a read-modify-write, known to be unsafe.
+	if (cp->c)
+		return cp->c(avr, bit, v, cp->param);
+	return 0; // a bit no one registered: an ordinary read-modify-write
 }
 
 void
