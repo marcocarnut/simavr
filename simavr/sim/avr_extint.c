@@ -31,6 +31,16 @@ typedef struct avr_extint_poll_context_t {
 	avr_extint_t *extint;
 } avr_extint_poll_context_t;
 
+/*
+ * In low level mode the flag stays 0, on the chip: the interrupt is only
+ * pending while the pin is low and it is enabled.
+ */
+static void avr_extint_raise_level(avr_t * avr, avr_int_vector_t * vector)
+{
+	avr_raise_interrupt(avr, vector);
+	avr_regbit_clear(avr, vector->raised);
+}
+
 static avr_cycle_count_t avr_extint_poll_level_trig(
 		struct avr_t * avr,
 		avr_cycle_count_t when,
@@ -52,11 +62,8 @@ static avr_cycle_count_t avr_extint_poll_level_trig(
 	if (bit)
 		goto terminate_poll; // Only poll while pin level remains low
 
-	if (avr->sreg[S_I]) {
-		uint8_t raised = avr_regbit_get(avr, p->eint[poll->eint_no].vector.raised) || p->eint[poll->eint_no].vector.pending;
-		if (!raised)
-			avr_raise_interrupt(avr, &p->eint[poll->eint_no].vector);
-	}
+	if (avr->sreg[S_I] && !p->eint[poll->eint_no].vector.pending)
+		avr_extint_raise_level(avr, &p->eint[poll->eint_no].vector);
 
 	return when+1;
 
@@ -117,6 +124,64 @@ void avr_extint_set_strict_lvl_trig(avr_t * avr, uint8_t extint_no, uint8_t stri
 	p->eint[extint_no].strict_lvl_trig = strict;
 }
 
+static uint8_t avr_extint_mode(avr_t * avr, avr_extint_t * p, int i)
+{
+	// ?? uint8_t isc_bits = p->eint[irq->irq + 1].isc->reg ? 2 : 1;
+	uint8_t isc_bits = p->eint[i].isc[1].reg ? 2 : 1;
+	uint8_t mode = avr_regbit_get_array(avr, p->eint[i].isc, isc_bits);
+
+	// Asynchronous interrupts, eg int2 in m16, m32 etc. support only down/up
+	if (isc_bits == 1)
+		mode +=2;
+	return mode;
+}
+
+/* In low level mode, the pin is low */
+static void avr_extint_level_low(avr_t * avr, avr_extint_t * p, int i)
+{
+	uint8_t raised = p->eint[i].vector.pending;
+
+	if (!raised)
+		avr_extint_raise_level(avr, &p->eint[i].vector);
+	if (!raised && p->eint[i].vector.pending) {
+		avr_extint_poll_context_t *poll;
+
+		/* Interrupt pending, so start fast timer to re-enable
+		 * it if the pin level does not change in the handler.
+		 */
+
+		poll = malloc(sizeof(avr_extint_poll_context_t));
+		if (poll) {
+			poll->eint_no = i;
+			poll->extint = p;
+			avr_cycle_timer_register(
+				 avr, 1, avr_extint_poll_level_trig, poll);
+		}
+	}
+}
+
+/*
+ * The enable and sense control registers: in low level mode, enabling the
+ * interrupt with the pin already low raises it, as the pin going low does.
+ */
+static void avr_extint_ctl_write(
+		struct avr_t * avr,
+		avr_io_addr_t addr,
+		uint8_t v,
+		void * param)
+{
+	avr_extint_t * p = (avr_extint_t *)param;
+
+	avr_core_watch_write(avr, addr, v);
+	for (int i = 0; i < EXTINT_COUNT && p->eint[i].port_ioctl; i++)
+		if ((p->eint[i].vector.enable.reg == addr ||
+				p->eint[i].isc[0].reg == addr) &&
+				avr_extint_mode(avr, p, i) == 0 &&
+				avr_regbit_get(avr, p->eint[i].vector.enable) &&
+				!p->io.irq[i].value)
+			avr_extint_level_low(avr, p, i);
+}
+
 static void avr_extint_irq_notify(struct avr_irq_t * irq, uint32_t value, void * param)
 {
 	avr_extint_t * p = (avr_extint_t *)param;
@@ -125,15 +190,7 @@ static void avr_extint_irq_notify(struct avr_irq_t * irq, uint32_t value, void *
 	int up = !irq->value && value;
 	int down = irq->value && !value;
 
-	// ?? uint8_t isc_bits = p->eint[irq->irq + 1].isc->reg ? 2 : 1;
-	uint8_t isc_bits = p->eint[irq->irq].isc[1].reg ? 2 : 1;
-	uint8_t mode = avr_regbit_get_array(avr, p->eint[irq->irq].isc, isc_bits);
-
-	// Asynchronous interrupts, eg int2 in m16, m32 etc. support only down/up
-	if (isc_bits == 1)
-		mode +=2;
-
-	switch (mode) {
+	switch (avr_extint_mode(avr, p, irq->irq)) {
 		case 0: // Level triggered (low level) interrupt
 			{
 				/**
@@ -149,29 +206,7 @@ static void avr_extint_irq_notify(struct avr_irq_t * irq, uint32_t value, void *
 					to the falling edge interrupt.
 				 */
 				if (!value) {
-					uint8_t raised;
-
-					raised = (avr_regbit_get(
-								 avr,
-								 p->eint[irq->irq].vector.raised) ||
-							  p->eint[irq->irq].vector.pending);
-					if (!raised)
-						avr_raise_interrupt(avr, &p->eint[irq->irq].vector);
-					if (!raised && p->eint[irq->irq].vector.pending) {
-						avr_extint_poll_context_t *poll;
-
-						/* Interrupt pending, so start fast timer to re-enable
-						 * it if the pin level does not change in the handler.
-						 */
-
-						poll = malloc(sizeof(avr_extint_poll_context_t));
-						if (poll) {
-							poll->eint_no = irq->irq;
-							poll->extint = p;
-							avr_cycle_timer_register(
-								 avr, 1, avr_extint_poll_level_trig, poll);
-						}
-					}
+					avr_extint_level_low(avr, p, irq->irq);
 				} else {
 					avr_clear_interrupt(avr, &p->eint[irq->irq].vector);
 					// If running, timer will clear on next call.
@@ -191,6 +226,35 @@ static void avr_extint_irq_notify(struct avr_irq_t * irq, uint32_t value, void *
 				avr_raise_interrupt(avr, &p->eint[irq->irq].vector);
 			break;
 	}
+}
+
+/*
+ * The flags are cleared by writing a 1 to them, and a 0 leaves them; SBI
+ * clears only its own.
+ */
+static void avr_extint_flag_write(
+		struct avr_t * avr,
+		avr_io_addr_t addr,
+		uint8_t v,
+		void * param)
+{
+	avr_extint_t * p = (avr_extint_t *)param;
+
+	for (int i = 0; i < EXTINT_COUNT && p->eint[i].port_ioctl; i++)
+		if (p->eint[i].vector.raised.reg == addr &&
+				avr_regbit_from_value(avr, p->eint[i].vector.raised, v))
+			avr_clear_interrupt(avr, &p->eint[i].vector);
+}
+
+static int avr_extint_flag_bit_write(
+		struct avr_t * avr,
+		uint8_t bit,
+		uint8_t v,
+		void * param)
+{
+	if (v)
+		avr_clear_interrupt(avr, (avr_int_vector_t *)param);
+	return 1;
 }
 
 static void avr_extint_reset(avr_io_t * port)
@@ -237,6 +301,28 @@ void avr_extint_init(avr_t * avr, avr_extint_t * p)
 		if (!p->eint[i].port_ioctl)
 			break;
 		avr_register_vector(avr, &p->eint[i].vector);
+
+		avr_regbit_t f = p->eint[i].vector.raised;
+		int flag = 1, enable = 1, isc = 1;
+		for (int j = 0; j < i; j++) {
+			if (p->eint[j].vector.raised.reg == f.reg)
+				flag = 0;
+			if (p->eint[j].vector.enable.reg == p->eint[i].vector.enable.reg)
+				enable = 0;
+			if (p->eint[j].isc[0].reg == p->eint[i].isc[0].reg)
+				isc = 0;
+		}
+		if (flag)
+			avr_register_io_write(avr, f.reg, avr_extint_flag_write, p);
+		if (enable)
+			avr_register_io_write(avr, p->eint[i].vector.enable.reg,
+					avr_extint_ctl_write, p);
+		if (isc && p->eint[i].isc[0].reg != p->eint[i].vector.enable.reg)
+			avr_register_io_write(avr, p->eint[i].isc[0].reg,
+					avr_extint_ctl_write, p);
+		if (f.reg < 64)
+			avr_register_single_io_bit_write(avr, f.reg, f.bit,
+					avr_extint_flag_bit_write, &p->eint[i].vector);
 	}
 	// allocate this module's IRQ
 
