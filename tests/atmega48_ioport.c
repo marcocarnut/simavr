@@ -93,7 +93,9 @@ int main()
 
 	PORTD = 0xe0;
 
-	/* Verify the interrupt flag is set. Result should be 3. */
+	/* Verify the interrupt flag is set. Result should be 1: INTF1 stays
+	 * 0, INT1 being in low level mode.
+	 */
 
 	printf("F<%02X ", EIFR);
 
